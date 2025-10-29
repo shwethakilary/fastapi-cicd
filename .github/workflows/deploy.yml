@@ -3,26 +3,52 @@ name: Deploy to EC2
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Deploy via SSH
+      - name: Deploy via SSH to EC2
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           HOST: ${{ secrets.EC2_HOST }}
           USER: ubuntu
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           echo "$PRIVATE_KEY" > key.pem
           chmod 600 key.pem
           ssh -o StrictHostKeyChecking=no -i key.pem ${USER}@${HOST} << 'EOF'
-            sudo apt update -y
-            sudo apt install -y docker.io docker-compose
+            set -e
+            sudo apt-get update -y
+            sudo apt-get install -y docker.io docker-compose
             sudo systemctl enable docker
             sudo systemctl start docker
-            sudo docker ps
+
+            mkdir -p /home/ubuntu/app
+            cd /home/ubuntu/app
+
+            # Pull latest app image from Docker Hub
+            sudo docker login -u "${DOCKER_USERNAME}" -p "${DOCKER_PASSWORD}"
+            sudo docker pull ${DOCKER_USERNAME}/fastapi-app:latest
+
+            # Stop and remove old containers
+            sudo docker ps -q | xargs -r sudo docker stop
+            sudo docker ps -aq | xargs -r sudo docker rm
+
+            # Run new container on port 80
+            sudo docker run -d -p 80:8000 ${DOCKER_USERNAME}/fastapi-app:latest
+
+            # Clean up
+            sudo docker system prune -af
           EOF
           rm key.pem
+
+      - name: Verify Deployment
+        run: |
+          sleep 10
+          curl -f http://${{ secrets.EC2_HOST }}/health || exit 1
