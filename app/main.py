@@ -27,6 +27,7 @@ def read_root():
 def health_check():
     return {"status": "healthy"}
 
+
 @app.get("/products", response_model=List[ProductResponse])
 def get_products():
     return [{"id": k, **v} for k, v in products.items()]
@@ -44,3 +45,4 @@ def get_product(product_id: int):
     if product_id not in products:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"id": product_id, **products[product_id]}
+``
