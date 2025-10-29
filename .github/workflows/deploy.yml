@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -22,33 +23,44 @@ jobs:
         run: |
           echo "$PRIVATE_KEY" > key.pem
           chmod 600 key.pem
-          ssh -o StrictHostKeyChecking=no -i key.pem ${USER}@${HOST} << 'EOF'
+          
+          ssh -o StrictHostKeyChecking=no -i key.pem ${USER}@${HOST} << EOF
             set -e
-            sudo apt-get update -y
-            sudo apt-get install -y docker.io docker-compose
-            sudo systemctl enable docker
-            sudo systemctl start docker
+            echo "🔹 Connected to EC2: \$(hostname)"
+            
+            # Install Docker if missing
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io docker-compose
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
 
             mkdir -p /home/ubuntu/app
             cd /home/ubuntu/app
 
-            # Pull latest app image from Docker Hub
-            sudo docker login -u "${DOCKER_USERNAME}" -p "${DOCKER_PASSWORD}"
+            echo "🔹 Logging in to Docker Hub..."
+            echo "${DOCKER_PASSWORD}" | sudo docker login -u "${DOCKER_USERNAME}" --password-stdin
+
+            echo "🔹 Pulling latest Docker image..."
             sudo docker pull ${DOCKER_USERNAME}/fastapi-app:latest
 
-            # Stop and remove old containers
+            echo "🔹 Stopping and removing old containers..."
             sudo docker ps -q | xargs -r sudo docker stop
             sudo docker ps -aq | xargs -r sudo docker rm
 
-            # Run new container on port 80
-            sudo docker run -d -p 80:8000 ${DOCKER_USERNAME}/fastapi-app:latest
+            echo "🔹 Running new container..."
+            sudo docker run -d -p 80:8000 --name fastapi-app ${DOCKER_USERNAME}/fastapi-app:latest
 
-            # Clean up
+            echo "🔹 Cleaning up..."
             sudo docker system prune -af
           EOF
-          rm key.pem
+
+          rm -f key.pem
 
       - name: Verify Deployment
         run: |
+          echo "⏳ Waiting for app to start..."
           sleep 10
+          echo "🔹 Checking health endpoint..."
           curl -f http://${{ secrets.EC2_HOST }}/health || exit 1
