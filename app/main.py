@@ -45,4 +45,3 @@ def get_product(product_id: int):
     if product_id not in products:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"id": product_id, **products[product_id]}
-``
